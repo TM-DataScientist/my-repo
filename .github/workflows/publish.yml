@@ -1,0 +1,56 @@
+name: Publish
+on:
+  # GitHub Actions 画面から手動で実行する
+  workflow_dispatch:
+    inputs:
+      # 公開するバージョン番号を入力する
+      # 例: 1.2.3 と入力すると v1.2.3 タグのイメージを作る
+      version:
+        type: string
+        required: true
+        description: バージョン（例：1.2.3）
+env:
+  # GHCR に push するコンテナイメージ名
+  IMAGE_NAME: gha-image
+jobs:
+  publish:
+    # GitHub が用意する Ubuntu 環境で実行する
+    runs-on: ubuntu-latest
+    permissions:
+      # GHCR へイメージを push するために必要
+      packages: write
+      # actions/checkout でソースコードを取得するために必要
+      contents: read
+    steps:
+      # リポジトリの内容を runner に取得する
+      - uses: actions/checkout@v4
+
+      # GHCR にログインする
+      # GITHUB_TOKEN を使うので、追加の personal access token は不要
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # イメージ名、タグ、ラベルをまとめて生成する
+      # ここで作った値を後続の build-push-action で使う
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          # push 先のイメージ名
+          images: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # 入力が 1.2.3 なら v1.2.3 タグを作る
+            type=semver,pattern={{version}},value=v${{ inputs.version }}
+            # 常に latest タグも付ける
+            type=raw,value=latest
+
+      # docker/example/ の Dockerfile を使ってイメージをビルドし、
+      # 生成したタグとラベルを付けて GHCR へ push する
+      - uses: docker/build-push-action@v5
+        with:
+          push: true
+          context: docker/example/
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
