@@ -1,0 +1,40 @@
+name: Release
+on:
+  push:
+    tags:
+      # v1.2.3 のようなバージョンタグを push したときだけ動かす
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+jobs:
+  release:
+    # GitHub が用意する Ubuntu 環境で実行する
+    runs-on: ubuntu-latest
+    env:
+      # push されたタグ名をそのまま VERSION に入れる
+      # 例: タグが v1.2.3 なら VERSION も v1.2.3 になる
+      VERSION: ${{ github.ref_name }}
+    permissions:
+      # Release の作成や asset のアップロードに必要
+      contents: write
+    steps:
+      # リポジトリのソースコードを runner に取得する
+      - uses: actions/checkout@v4
+
+      # Go 1.22 を使えるようにする
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      # 配布用バイナリをビルドする
+      # -ldflags で main.version にタグ名を埋め込む
+      # 出力先は一時ディレクトリにして、後続ステップでそのまま添付する
+      - run: |
+          go build -ldflags "-X main.version=${VERSION}" \
+            -o "${RUNNER_TEMP}/example" go/example/main.go
+
+      # GitHub Release を作成し、ビルド済みバイナリを asset として添付する
+      - run: |
+          gh release create "${VERSION}" --title "${VERSION}" --generate-notes
+          gh release upload "${VERSION}" "${RUNNER_TEMP}/example"
+        env:
+          # GitHub CLI が Release を操作するための認証トークン
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
